@@ -1,4 +1,4 @@
-const CACHE='kalorie-v1';
+const CACHE='kalorie-v2';
 const FILES=['./','./index.html','./produkty.json','./manifest.json','./icon-192.png','./icon-512.png'];
 self.addEventListener('install',e=>{e.waitUntil(caches.open(CACHE).then(c=>c.addAll(FILES)));self.skipWaiting()});
 // usuwa tylko własne, stare cache (nie rusza cache Słówek)

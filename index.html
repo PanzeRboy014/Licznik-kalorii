@@ -150,6 +150,14 @@ ul.list button.it{display:flex;align-items:center;gap:12px;width:100%;text-align
 .toast{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(90px + env(safe-area-inset-bottom,0px));z-index:60;background:var(--ink);color:var(--paper);border-radius:12px;padding:11px 14px;display:flex;gap:14px;align-items:center;max-width:calc(100% - 32px);font-size:15px;box-shadow:0 6px 20px rgba(0,0,0,.25)}
 .toast button{border:0;background:none;color:var(--kc);font:700 15px "Atkinson Hyperlegible",sans-serif;cursor:pointer;padding:4px}
 .foot{color:var(--soft);font-size:13px;margin-top:26px}
+.bal{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-top:16px;padding-top:14px;border-top:1px solid var(--line)}
+.burnbtn{border:2px solid var(--line);background:var(--bg);color:var(--ink);border-radius:10px;padding:6px 11px;font:400 14px "Atkinson Hyperlegible",sans-serif;cursor:pointer}
+.burnbtn b{font-variant-numeric:tabular-nums}
+.baltxt{font-weight:700;font-size:15px;text-align:right}
+.baltxt small{display:block;font-weight:400;color:var(--soft);font-size:13px}
+.pos{color:var(--pw)} .neg{color:var(--bad)}
+.defcard .big b{font-size:clamp(40px,12vw,56px)}
+.defcard .fat{font:700 22px "Bricolage Grotesque",sans-serif;margin:6px 0 2px}
 </style>
 </head>
 <body>
@@ -201,7 +209,7 @@ const kdate=k=>{const [y,m,d]=k.split('-').map(Number);return new Date(y,m-1,d)}
 const today=()=>dkey(new Date());
 
 /* ---------- stan ---------- */
-function blank(){return {v:1,goal:{kcal:2200,b:0,t:0,w:0},days:{},custom:[],recent:[]}}
+function blank(){return {v:1,goal:{kcal:2200,b:0,t:0,w:0,tdee:0},days:{},custom:[],recent:[],burn:{},start:''}}
 function load(){try{const r=localStorage.getItem(KEY);if(r){const s=JSON.parse(r);const b=blank();return {...b,...s,goal:{...b.goal,...(s.goal||{})}}}}catch(e){}return blank()}
 let S=load();
 function save(){try{localStorage.setItem(KEY,JSON.stringify(S))}catch(e){toast('Nie udało się zapisać danych. Zrób kopię zapasową w Ustawieniach.')}}
@@ -219,6 +227,22 @@ fetch('produkty.json').then(r=>{if(!r.ok)throw 0;return r.json()}).then(a=>{
 function ek(e){const f=e.g/100;return {k:e.k*f,b:e.b*f,t:e.t*f,w:e.w*f}}
 function tot(list){const s={k:0,b:0,t:0,w:0};for(const e of list||[]){const x=ek(e);s.k+=x.k;s.b+=x.b;s.t+=x.t;s.w+=x.w}return s}
 function dayList(k){return S.days[k]||(S.days[k]=[])}
+const KCAL_KG=7700; // ok. 7700 kcal = 1 kg tkanki tłuszczowej
+function burnOf(k){return S.burn&&S.burn[k]>0?S.burn[k]:(S.goal.tdee||0)}
+function deficitOf(k){const l=S.days[k];if(!l||!l.length)return null;const b=burnOf(k);if(!b)return null;return b-tot(l).k}
+const fatG=d=>d/KCAL_KG*1000;
+const fFat=g=>Math.abs(g)>=1000?(Math.abs(g)/1000).toLocaleString('pl-PL',{maximumFractionDigits:2})+' kg':fk(Math.abs(g))+' g';
+function deficitSum(){const t=today(),st=S.start||'';let sum=0,n=0,first='';for(const k of Object.keys(S.days).sort()){if(k>=t||k<st)continue;const d=deficitOf(k);if(d==null)continue;sum+=d;n++;if(!first)first=k}return {sum,n,first}}
+function balText(d){return d>=0?`Deficyt ${fk(d)} kcal`:`Nadwyżka ${fk(-d)} kcal`}
+function openBurn(k){
+  const def=S.goal.tdee||0,cur0=S.burn&&S.burn[k];
+  openSheet(`<h3>Spalone kalorie</h3><p class="sub">${esc(dayLabel(k).join(', '))}</p>
+   <label for="bIn">Łącznie spalone tego dnia (kcal)</label><input type="text" inputmode="numeric" id="bIn" value="${cur0||def||''}">
+   <p class="hint">Wpisz z Garmina łączne spalone kalorie (spoczynkowe + aktywne). Dzisiejsza wartość rośnie w ciągu dnia — najdokładniej wpisać ją wieczorem albo następnego ranka.${def?` Domyślnie: ${fk(def)} kcal z Ustawień.`:''}</p>
+   <div class="row">${cur0?'<button class="btn ghost" id="bDef">Użyj domyślnej</button>':''}<button class="btn" id="bOk">Zapisz</button></div>`);
+  $('#bOk').onclick=()=>{const v=Math.round(num($('#bIn').value));S.burn=S.burn||{};if(v>0&&v!==def)S.burn[k]=v;else delete S.burn[k];if(v>0&&!def){S.goal.tdee=v;delete S.burn[k]}save();closeSheet();render()};
+  if($('#bDef'))$('#bDef').onclick=()=>{delete S.burn[k];save();closeSheet();render()};
+}
 function defMeal(){const h=new Date().getHours()+new Date().getMinutes()/60;return h<11?0:h<16.5?1:2}
 
 /* ---------- nawigacja ---------- */
@@ -261,6 +285,7 @@ function renderDay(){
       ${goal?`<em class="goal" style="left:${goal/scale*100}%"></em>`:''}
     </div>
     <div class="macros">${mac('Białko',T.b,G.b,'--pb')}${mac('Tłuszcz',T.t,G.t,'--pt')}${mac('Węglowodany',T.w,G.w,'--pw')}</div>
+    ${balBlock()}
   </section>`;
   MEALS.forEach((m,i)=>{
     const items=list.filter(e=>e.m===i);const mt=tot(items);
@@ -271,11 +296,17 @@ function renderDay(){
     h+=`<button class="link addmeal" data-m="${i}">Dodaj do: ${m.toLowerCase()}</button></section>`;
   });
   $('#view').innerHTML=h;
-  $('#dPrev').onclick=()=>shiftDay(-1);$('#dNext').onclick=()=>shiftDay(1);
+  $('#dPrev').onclick=()=>shiftDay(-1);$('#dNext').onclick=()=>shiftDay(1);$('#dBurn').onclick=()=>openBurn(cur);
   document.querySelectorAll('[data-m]').forEach(b=>b.onclick=()=>openSearch({mode:'log',meal:+b.dataset.m}));
   document.querySelectorAll('[data-e]').forEach(b=>b.onclick=()=>{const e=(S.days[cur]||[]).find(x=>x.id===b.dataset.e);if(!e)return;const s=findItem(e.ref)||{};openPortion({...e,p:s.p||[],c:s.c||'',brand:s.brand,src:s.src},{mode:'edit',entry:e})});
 }
 function findItem(id){if(!id)return null;return S.custom.find(x=>x.id===id)||DB.find(x=>x.id===id)||S.recent.find(x=>x.id===id)||null}
+function balBlock(){
+  const b=burnOf(cur),d=deficitOf(cur),isT=cur===today();
+  if(!b)return `<div class="bal"><button class="burnbtn" id="dBurn">Wpisz spalone kalorie z Garmina</button><span class="baltxt"><small>żeby liczyć deficyt</small></span></div>`;
+  const txt=d==null?'<small>Dodaj posiłki, żeby policzyć deficyt</small>':`<span class="${d>=0?'pos':'neg'}">${balText(d)}</span><small>${d>=0?'ok. '+fFat(fatG(d))+' tłuszczu':'ok. '+fFat(fatG(d))+' na plus'}${isT?' (dzień w trakcie)':''}</small>`;
+  return `<div class="bal"><button class="burnbtn" id="dBurn">Spalone: <b>${fk(b)}</b> kcal</button><span class="baltxt">${txt}</span></div>`;
+}
 function entryAmount(e){const u=e.u||'g';return e.pl?`${fg(e.q)} × ${e.pl} (${fk(e.g)} ${u})`:`${fk(e.g)} ${u}`}
 
 /* ---------- wyszukiwanie ---------- */
@@ -542,6 +573,16 @@ function renderRecipe(){
 }
 
 /* ---------- historia ---------- */
+function defCard(){
+  if(!S.goal.tdee&&!Object.keys(S.burn||{}).length)return `<h2 class="sec" style="margin-top:4px">Deficyt kalorii</h2><div class="paper"><p style="margin:0">Wpisz zapotrzebowanie z Garmina w Ustawieniach, a tutaj zobaczysz łączny deficyt i szacowaną ilość spalonego tłuszczu.</p><div class="row"><button class="btn" id="goSet">Przejdź do ustawień</button></div></div>`;
+  const D=deficitSum(),t=today(),dt=deficitOf(t),from=S.start||D.first;
+  const fromTxt=from?kdate(from).toLocaleDateString('pl-PL',{day:'numeric',month:'long'}):'';
+  return `<h2 class="sec" style="margin-top:4px">Deficyt kalorii</h2><div class="paper defcard">
+   <div class="big"><b class="${D.sum>=0?'':'neg'}">${D.sum<0?'−':''}${fk(Math.abs(D.sum))}</b><span>kcal ${D.sum>=0?'deficytu':'nadwyżki'} łącznie</span></div>
+   <p class="fat">≈ ${fFat(fatG(D.sum))} tłuszczu ${D.sum>=0?'mniej':'więcej'}</p>
+   <p class="hint" style="margin-top:4px">${D.n?`${D.n} ${D.n===1?'pełny dzień':(D.n%10>=2&&D.n%10<=4&&(D.n%100<12||D.n%100>14))?'pełne dni':'pełnych dni'} z wpisami${fromTxt?' od '+fromTxt:''}, średnio ${D.sum<0?'−':''}${fk(Math.abs(D.sum/D.n))} kcal dziennie.`:'Pierwszy pełny dzień doliczy się jutro.'}${dt!=null?` Dziś na razie: ${balText(dt).toLowerCase()} (doliczy się po zakończeniu dnia).`:''} Dni bez wpisów są pomijane. Przyjęto 7700 kcal = 1 kg tłuszczu.</p>
+   <div class="row"><button class="btn ghost small" id="defReset">Licz od dziś</button>${S.start?'<button class="btn ghost small" id="defAll">Licz od początku</button>':''}</div></div>`;
+}
 function renderHist(){
   const N=30,days=[];const d=new Date();
   for(let i=N-1;i>=0;i--){const x=new Date(d);x.setDate(d.getDate()-i);const k=dkey(x);days.push({k,d:x,T:tot(S.days[k]||[]),has:!!(S.days[k]&&S.days[k].length)})}
@@ -553,7 +594,7 @@ function renderHist(){
   const avg=withData.length?withData.reduce((a,x)=>a+x.T.k,0)/withData.length:0;
   const inGoal=goal?withData.filter(x=>x.T.k<=goal*1.05).length:0;
   const lab=i=>{const x=days[i].d;return x.getDate()+'.'+pad(x.getMonth()+1)};
-  let h=`<h2 class="sec" style="margin-top:4px">Ostatnie 30 dni</h2>
+  let h=defCard()+`<h2 class="sec">Ostatnie 30 dni</h2>
    <div class="paper"><svg class="chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="Kalorie dziennie z ostatnich 30 dni">
    ${bars}${goal?`<line x1="0" x2="${W}" y1="${gy}" y2="${gy}" stroke="var(--ink)" stroke-width="1.2" stroke-dasharray="4 3"/><text x="${W}" y="${gy-4}" text-anchor="end">cel ${fk(goal)}</text>`:''}
    <text x="0" y="${H-4}">${lab(0)}</text><text x="${W/2}" y="${H-4}" text-anchor="middle">${lab(15)}</text><text x="${W}" y="${H-4}" text-anchor="end">dziś</text></svg></div>
@@ -561,8 +602,11 @@ function renderHist(){
    <div class="stat"><b>${withData.length}${goal?` / ${inGoal}`:''}</b><span>${goal?'dni z wpisami / w granicy celu':'dni z wpisami'}</span></div></div>`;
   const rows=withData.slice().reverse();
   h+='<h2 class="sec">Dni</h2>';
-  h+=rows.length?'<ul class="list">'+rows.map(x=>{const [a,b]=dayLabel(x.k);return `<li><button class="it" data-day="${x.k}"><span class="nm"><b>${esc(a)}</b><small>${esc(b||'')}</small></span><span class="kc">${fk(x.T.k)} kcal<small>B ${fg(x.T.b)} · T ${fg(x.T.t)} · W ${fg(x.T.w)}</small></span></button></li>`}).join('')+'</ul>':'<p class="empty">Tu pojawią się dni, w których coś zapiszesz.</p>';
+  h+=rows.length?'<ul class="list">'+rows.map(x=>{const [a,b]=dayLabel(x.k);return `<li><button class="it" data-day="${x.k}"><span class="nm"><b>${esc(a)}</b><small>${esc([b,(d=>d==null?'':balText(d).toLowerCase())(deficitOf(x.k))].filter(Boolean).join(', '))}</small></span><span class="kc">${fk(x.T.k)} kcal<small>B ${fg(x.T.b)} · T ${fg(x.T.t)} · W ${fg(x.T.w)}</small></span></button></li>`}).join('')+'</ul>':'<p class="empty">Tu pojawią się dni, w których coś zapiszesz.</p>';
   $('#view').innerHTML=h;
+  if($('#goSet'))$('#goSet').onclick=()=>{tab='ustawienia';render()};
+  if($('#defReset'))$('#defReset').onclick=()=>{if(!confirm('Zacząć liczyć deficyt od dziś? Wcześniejsze dni zostaną w historii, ale nie będą wliczane.'))return;S.start=today();save();renderHist()};
+  if($('#defAll'))$('#defAll').onclick=()=>{S.start='';save();renderHist()};
   document.querySelectorAll('[data-day]').forEach(b=>b.onclick=()=>{cur=b.dataset.day;tab='dzien';render();window.scrollTo(0,0)});
 }
 
@@ -575,6 +619,8 @@ function renderSet(){
    <div><label for="gT">Tłuszcz (g)</label><input type="text" inputmode="numeric" id="gT" value="${G.t||''}"></div>
    <div><label for="gW">Węgl. (g)</label><input type="text" inputmode="numeric" id="gW" value="${G.w||''}"></div></div>
    <p class="hint">Cele makroskładników są opcjonalne — zostaw puste, jeśli ich nie liczysz.</p>
+   <label for="gTd">Zapotrzebowanie (kcal na dzień)</label><input type="text" inputmode="numeric" id="gTd" value="${G.tdee||''}" placeholder="np. z Garmina">
+   <p class="hint">Służy do liczenia deficytu. Jeśli danego dnia Garmin pokaże inną wartość, zmienisz ją w Dzienniku przyciskiem „Spalone”.</p>
    <div class="row"><button class="btn" id="gSave">Zapisz cel</button></div></div>
    <h2 class="sec">Kopia zapasowa</h2>
    <div class="paper"><p style="margin:0">Dane są tylko na tym telefonie (${nDays} ${nDays===1?'dzień':'dni'} w dzienniku, ${S.custom.length} własnych pozycji). Zapisuj kopię w Plikach lub na iCloud Drive.</p>
@@ -583,8 +629,8 @@ function renderSet(){
    <h2 class="sec">Źródła danych</h2>
    <p class="hint" style="margin:0">Wbudowana tabela zawiera przybliżone średnie wartości (dania to typowe przepisy — rzeczywista porcja może się różnić). Produkty sklepowe pochodzą z Open Food Facts (licencja ODbL).</p>
    <div class="row" style="margin-top:28px"><button class="btn danger" id="bWipe">Usuń wszystkie dane</button></div>
-   <p class="foot">Kalorie, wersja 1</p>`;
-  $('#gSave').onclick=()=>{const g=id=>{const v=Math.round(num($(id).value));return v>0?v:0};S.goal={kcal:g('#gK'),b:g('#gB'),t:g('#gT'),w:g('#gW')};save();toast('Zapisano cel')};
+   <p class="foot">Kalorie, wersja 2</p>`;
+  $('#gSave').onclick=()=>{const g=id=>{const v=Math.round(num($(id).value));return v>0?v:0};S.goal={kcal:g('#gK'),b:g('#gB'),t:g('#gT'),w:g('#gW'),tdee:g('#gTd')};save();toast('Zapisano cel')};
   $('#bExp').onclick=exportData;
   $('#bImp').onclick=()=>$('#bFile').click();
   $('#bFile').onchange=importData;
